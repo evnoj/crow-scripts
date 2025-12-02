@@ -1,7 +1,7 @@
 lo = -4.7
 hi = 5.05
-lo_center = -5.008298
-hi_center = 5.610094
+lo_center = -5.0
+hi_center = 5.6
 val_mult = 0.5
 -- lo_center = -5
 -- hi_center = 5
@@ -16,7 +16,7 @@ circle = loop{
     -- to(hi_center, dyn{t = 0.5})
     to(lo_center, dyn{t = 0.5}),
     to(hi_center, 0),
-    -- to(5, 0)
+    to(5.1, 0),
 }
 
 -- circle = loop{
