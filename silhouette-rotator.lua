@@ -5,7 +5,7 @@ range = high - low
 stages = 50
 time = .5
 time_min = .056
-time_max = 8
+time_max = 30
 time_range = time_max - time_min
 dir = 1
 
@@ -47,15 +47,30 @@ function process_t(t)
     end
 end
 
-input[1].mode( 'stream', 0.001 ) -- set input n to 'stream' every time seconds
+-- p is 0-1
+-- 0 is stopped, just above 0 is slowest rotation, 1 is fastest rotation
+-- function update_time(p)
+
+input[1].mode( 'stream', 0.01 ) -- set input n to 'stream' every time seconds
 
 input[1].stream = function(volts)
-    local p = 1 - volts / 5
+    -- local p = 1 - volts / 5
+    local p = volts / 5
     p = clamp(p, 0, 1)
-    p = p^3
-    p = 1 - p
+    -- p = p^3
+    -- p = 1 - p
+    p = biased_curve(p, 0.05, 2, 3)
+    -- print(p)
+
     local t = time_max-(p * time_range)
     process_t(t)
 end
 
-
+-- maybe not great for cv
+function biased_curve(p, center, lower_exponent, upper_exponent)
+    if p < center then
+        return center * ((p / center) ^ lower_exponent)
+    else
+        return 1 - (1 - center) * (((1 - p) / (1 - center)) ^ upper_exponent)
+    end
+end
