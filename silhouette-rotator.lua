@@ -1,155 +1,61 @@
 low = -5.0
--- low = -5.008298
 high = 5.1
 high_wrap = 5.6
--- high_wrap = 5.610094
 range = high - low
-sample_rate = 0.0001
-step_size = range / 1000 * 4
-out1_v = 0
-rate = 1/100 / 3
+stages = 50
+time = .5
+time_min = .056
+time_max = 8
+time_range = time_max - time_min
 dir = 1
 
--- staying within size limits is caller's responsibility
-function make_queue(size)
-    local t = {}
+function make_circle(stages)
+    local asl = {}
 
-    for i=1,size do
-        t[i] = {}
-    end
-    for i=1,size-1 do
-        t[i].next = t[(i + 1)]
-    end
-    t[size].next = t[1]
-
-    t.head = t[1]
-    t.tail = t[1]
-    t.empty = true
-
-    function t:push(data)
-        if self.empty then
-            self.tail.data = data
-            self.empty = false
-        else
-            self.tail = self.tail.next
-            self.tail.data = data
-        end
+    for i=1,stages do
+        local stage = to(5 - (10*i/stages), dyn{t = time/stages})
+        table.insert(asl, stage)
     end
 
-    function t:pop()
-        local data = self.head.data
-        self.head.data = nil
+    table.insert(asl, to(hi_center, 0))
+    table.insert(asl, to(5.1, 0))
 
-        if self.head == self.tail then
-            self.empty = true
-        else
-            self.head = self.head.next
-        end
-
-        return data
-    end
-
-    return t
+    return loop(asl)
 end
 
-out1_q = make_queue(50)
-out1_q:push(0)
--- print("data: "..out1_q.tail.data)
+output[1](make_circle(stages))
 
-down = lock{
-    to(high_wrap, 0),
-    to(low, 0),
-    -- to(low+0.01, 0.01)
-}
+local function truncate(num)
+    return math.floor(num * 1000) / 1000
+end
 
-step = {
-    to(dyn{next = 0}, dyn{rate = 1/100} )
-}
+local function clamp(n, min, max)
+    return math.max(min, math.min(max, n))
+end
 
-output[1].done = function()
-    -- print('done')
-    if rate ~= 0 then
-        -- output[1].dyn.rate = rate
-        local rate = rate
+function process_t(t)
+    t = truncate(t)
+    if t ~= time then
+        -- if t < .56 then
+        --     return
+        -- end
+        -- print(t)
 
-        out1_v = out1_v + 0.2 * dir
-        local asl
-        if out1_v > high_wrap then
-            out1_v = low + 0.2
-            asl = {
-                to(high_wrap, 0),
-                to(low, 0),
-                to(out1_v, rate)
-            }
-        elseif out1_v < low then
-            out1_v = high_wrap - 0.2
-            asl = {
-                to(low, 0),
-                to(out1_v, rate)
-            }
-        else
-            asl = {
-                to(out1_v, rate)
-            }
-        end
-        -- output[1].dyn.next = out1_v
+        output[1].dyn.t = t / stages
 
-        output[1](asl)
+        time = t
     end
 end
-output[1](step)
 
--- function tick()
---     local tail = out1_q.tail.data
---     -- out1_q.tail.data = nil
---     local d = out1_q:pop()
---     -- print(d)
---     output[1].volts = d
---     -- output[1].volts = out1_q:pop()
---     -- print("data: "..tail)
+input[1].mode( 'stream', 0.001 ) -- set input n to 'stream' every time seconds
 
---     if out1_q.empty then
---         local next = tail + step_size
+input[1].stream = function(volts)
+    local p = 1 - volts / 5
+    p = clamp(p, 0, 1)
+    p = p^3
+    p = 1 - p
+    local t = time_max-(p * time_range)
+    process_t(t)
+end
 
---         if next > high_wrap then
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(high_wrap)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             -- out1_q:push(low)
---             output[1](down)
---             out1_q:push(low + next - high_wrap)
---             -- out1_q:push(-10.1 + next)
---         elseif next < low then
---             out1_q:push(low)
---             out1_q:push(high_wrap)
---             out1_q:push(high_wrap + next - low)
---             -- out1_q:push(10.1 + next)
---         else
---             out1_q:push(next)
---         end
---     end
--- end
 
--- ticker = metro.init{
---     event = tick,
---     time = sample_rate,
---     count = -1
--- }
-
--- ticker:start()
