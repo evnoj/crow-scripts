@@ -1,11 +1,15 @@
 lo = -5.0
 hi = 5.1
-lo_center = -5.0
-hi_center = 5.6
-val_mult = 1
+-- lo_center = -5.0
+lo_center = -5.008298
+-- lo_center = -4.939958
+-- hi_center = 5.6
+hi_center = 5.610094
+-- hi_center = 5.682232
+val_mult = 1.5
 -- t = 1
 t = 0.05
-out = 1
+out = 2
 stages = 50
 step_size = 0.01
 steps = math.floor((hi - lo_center) / step_size) - 1
@@ -22,16 +26,18 @@ steps = math.floor((hi - lo_center) / step_size) - 1
 --     to(5.1, 0),
 -- }
 
--- circle = loop{
---     -- to(dyn{lo = -5}, 0),
---     -- to(dyn{hi = 5}, dyn{t = 0.5}),
---     -- to(lo, 0)
---     -- to(lo_center, 0),
---     -- to(hi_center, dyn{t = 0.5})
---     to(lo_center, dyn{t = t}),
---     to(hi_center, 0),
---     to(5.1, 0),
--- }
+circle = loop{
+    -- to(dyn{lo = -5}, 0),
+    -- to(dyn{hi = 5}, dyn{t = 0.5}),
+    to(dyn{lo = -5}, dyn{t = 0.5}),
+    to(dyn{hi = 5}, 0),
+    -- to(lo, 0)
+    -- to(lo_center, 0),
+    -- to(hi_center, dyn{t = 0.5})
+    -- to(lo_center, dyn{t = t}),
+    -- to(hi_center, 0),
+    -- to(5.1, 0),
+}
 
 -- circle = loop({
 --     to(3, dyn{t = t/5}),
@@ -59,16 +65,16 @@ steps = math.floor((hi - lo_center) / step_size) - 1
 --     to(hi_center, 0),
 --     to(hi, 0)
 -- }
-circle = loop{
-    asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
-        to(lo + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
-    }),
-    to(lo_center, 0),
-    to(hi_center, 0),
-    to(hi, 0)
-}
+-- circle = loop{
+--     asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
+--         to(lo + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+--     }),
+--     -- to(lo_center, 0),
+--     to(hi_center, 0),
+--     to(hi, 0)
+-- }
 output[out](circle)
-output[2](circle)
+-- output[2](circle)
 
 local function round_decimal(n, place)
     return math.floor(place*n + 0.5)/place
@@ -182,6 +188,11 @@ end
 --     -- to(hi_center, dyn{t = 0.5})
 -- }
 
+function p()
+    print("high: "..output[out].dyn.hi..", low: "..output[out].dyn.lo)
+    print("time: "..t)
+end
+
 txiVals = {
     param = {},
     cv = {}
@@ -209,9 +220,9 @@ handlers = {
                 val = val / 9
                 val = val - 0.5
                 val = val * val_mult
-                -- hi = hi_center + val
+                hi = hi_center + val
             end
-            -- output[out].dyn.hi = hi
+            output[out].dyn.hi = hi
         end,
         [2] = function(val)
             -- print("param 2: "..val)
@@ -219,16 +230,16 @@ handlers = {
                 val = val / 9
                 val = val - 0.5
                 val = val * val_mult
-                -- lo = lo_center + val
+                lo = lo_center + val
             end
-            -- output[out].dyn.lo = lo
+            output[out].dyn.lo = lo
         end,
         [3] = function(val)
             val = (val / 9) * (val / 9)
             t = round_thousandths(val + 0.01)
-            -- output[out].dyn.t = t
+            output[out].dyn.t = t
             -- output[out].dyn.t = t / stages
-            output[out].dyn.t = t / steps
+            -- output[out].dyn.t = t / steps
             -- output[out].dyn.t = t * .96
             -- output[out].dyn.wrap_t = t * .02
 
