@@ -1,13 +1,14 @@
-lo = -4.7
-hi = 5.05
+lo = -5.0
+hi = 5.1
 lo_center = -5.0
 hi_center = 5.6
 val_mult = 1
--- lo_center = -5
--- hi_center = 5
-t = 0.5
+-- t = 1
+t = 0.05
 out = 1
 stages = 50
+step_size = 0.01
+steps = math.floor((hi - lo_center) / step_size) - 1
 
 -- circle = loop{
 --     -- to(dyn{lo = -5}, 0),
@@ -41,6 +42,83 @@ stages = 50
 --     to(hi_center, 0),
 --     to(5.1, 0),
 -- })
+
+-- circle = loop{
+--     to(dyn{pos=hi_center}:step(-0.1):wrap(lo_center, hi_center), dyn{t=(t/steps)})
+--     -- to(lo_center, dyn{t = t}),
+--     -- to(hi_center, 0),
+--     -- to(5.1, 0)
+-- }
+
+-- circle = loop{
+--     asl._while( dyn{counter = steps+1}:step(-1):wrap(0, steps+1), {
+--         -- to(dyn{pos=hi}:step(-1 * step_size):wrap(lo, hi-step_size), dyn{t=(t/steps)})
+--         to(dyn{pos=hi}:step(-0.02):wrap(lo, hi-step_size), dyn{t=(t/steps)})
+--     }),
+--     to(lo_center, 0),
+--     to(hi_center, 0),
+--     to(hi, 0)
+-- }
+circle = loop{
+    asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
+        to(lo + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+    }),
+    to(lo_center, 0),
+    to(hi_center, 0),
+    to(hi, 0)
+}
+output[out](circle)
+output[2](circle)
+
+local function round_decimal(n, place)
+    return math.floor(place*n + 0.5)/place
+end
+
+local function round_thousandths(n)
+    return math.floor(1000*n + 0.5)/1000
+end
+
+local function round_hundredths()
+    output[1].dyn.pos = math.floor(100*output[1].dyn.pos + 0.5)/100
+    -- return math.floor(100*n + 0.5)/100
+end
+
+local function round_pos()
+    output[1].dyn.pos = round_decimal(output[1].dyn.pos, 100)
+end
+
+rounder = metro.init{ event = round_pos
+                      , time  = 1
+                      , count = -1 -- nb: -1 is 'forever'
+                      }
+-- rounder:start()
+
+-- circle = loop{
+--     times(5, {
+--         to(lo_center, dyn{t = t}),
+--         to(hi_center, 0),
+--         to(5.1, 0)
+--     }),
+-- }
+
+-- circle = loop{
+--     asl._while( mutable(5+1):wrap(1,6)-1, {
+--         to(lo_center, dyn{t = t}),
+--         to(hi_center, 0),
+--         to(5.1, 0),
+--         -- -- Counter decrements automatically each iteration
+--         -- to(0, 0)  -- dummy operation to trigger counter check
+--     })
+-- }
+
+-- circle = loop{
+--     asl._while( dyn{counter = 6}:step(-1):wrap(0, 6), {
+--         to(lo_center, dyn{t = t}),
+--         to(hi_center, 0),
+--         to(5.1, 0)
+--     }),
+--     to(5, 5)
+-- }
 
 function make_circle(stages)
     local asl = {}
@@ -104,24 +182,6 @@ end
 --     -- to(hi_center, dyn{t = 0.5})
 -- }
 
-function p()
-    print("hi: "..hi..", lo: "..lo..", t: "..t)
-end
-
-function r()
-    -- output[1](circle)
-    output[1](rise)
-    output[1].volts = lo
-end
-
-function h()
-    output[1](rise)
-end
-
-function l()
-    output[1].volts = lo
-end
-
 txiVals = {
     param = {},
     cv = {}
@@ -165,8 +225,10 @@ handlers = {
         end,
         [3] = function(val)
             val = (val / 9) * (val / 9)
-            t = val + 0.01
-            output[out].dyn.t = t / stages
+            t = round_thousandths(val + 0.01)
+            -- output[out].dyn.t = t
+            -- output[out].dyn.t = t / stages
+            output[out].dyn.t = t / steps
             -- output[out].dyn.t = t * .96
             -- output[out].dyn.wrap_t = t * .02
 
@@ -220,18 +282,17 @@ clock.run(function()
     end
 end)
 
-output[out](make_circle(stages))
--- output[out](circle)
+-- output[out](make_circle(stages))
 
--- function parameterUpdater()
---     local n = 1
---     while true do
---         clock.sleep(.01)
+function parameterUpdater()
+    local n = 1
+    while true do
+        clock.sleep(.01)
 
---         handlers.param[n](txiVals.param[n])
---         handlers.cv[n](txiVals.cv[n])
+        handlers.param[n](txiVals.param[n])
+        handlers.cv[n](txiVals.cv[n])
 
---         n = (n % 4) + 1
---     end
--- end
+        n = (n % 4) + 1
+    end
+end
 
