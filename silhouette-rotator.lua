@@ -2,59 +2,68 @@ low = -5.0
 high = 5.1
 high_wrap = 5.6
 range = high - low
-stages = 50
 time = .5
 time_min = .056
 time_max = 30
 time_range = time_max - time_min
-time_mult = 1
+-- time_mult = 1
+step_size = 0.01
+steps = math.floor((range) / step_size) - 1
 dir = 1
 
-function make_clockwise_spinner(stages)
-    local spinner = {}
+-- function make_clockwise_spinner(stages)
+--     circle = loop{
+--         asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
+--             to(low + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+--         }),
+--         to(low, 0),
+--         to(high_wrap, 0),
+--         to(high, 0)
+--     }
+-- end
 
-    for i=1,stages do
-        local stage = to(high - (range*i/stages), dyn{t = time/stages})
-        table.insert(spinner, stage)
-    end
+clockwise_spinner = loop{
+    asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
+        to(low + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(time/steps)})
+    }),
+    to(low, 0),
+    to(high_wrap, 0),
+    to(high, 0)
+}
 
-    table.insert(spinner, to(high_wrap, 0))
-    table.insert(spinner, to(high, 0))
-
-    return loop(spinner)
-end
-
-function make_counterclockwise_spinner(stages)
-    local asl = {}
-
-    for i=1,stages do
-        local stage = to(low + (range*i/stages), dyn{t = time/stages})
-        table.insert(asl, stage)
-    end
-
-    table.insert(asl, to(high_wrap, 0))
-    table.insert(asl, to(low, 0))
-
-    return loop(asl)
-end
-
-function make_clockwise_oneoff(stages, start, t)
-    local spinner = {}
+function make_clockwise_oneoff(start, t)
     local range = start - low
+    local steps_once = math.floor((range) / step_size) - 1
+    -- local time_mult = 1 - (start + high) / range
 
-    for i=1,stages do
-        local stage = to(start - (range*i/stages), dyn{t = (t*time_mult)/stages})
-        table.insert(spinner, stage)
-    end
+    local oneoff = {
+        asl._while( dyn{loop_counter = steps_once+1}:step(-1), {
+            to(low + (dyn{step_counter = steps_once}:step(-1) * step_size), dyn{t=(t/steps)})
+        }),
+        to(low, 0),
+        to(high_wrap, 0),
+        to(high, 0)
+    }
 
-    -- table.insert(asl, to(high_wrap, 0))
-    -- table.insert(asl, to(high, 0))
-
-    return spinner
+    return oneoff
 end
 
-local clockwise_spinner = make_clockwise_spinner(stages)
-local counterclockwise_spinner = make_counterclockwise_spinner(stages)
+-- function make_counterclockwise_spinner(stages)
+--     local asl = {}
+
+--     for i=1,stages do
+--         local stage = to(low + (range*i/stages), dyn{t = time/stages})
+--         table.insert(asl, stage)
+--     end
+
+--     table.insert(asl, to(high_wrap, 0))
+--     table.insert(asl, to(low, 0))
+
+--     return loop(asl)
+-- end
+
+-- local clockwise_spinner = make_clockwise_spinner(stages)
+-- local counterclockwise_spinner = make_counterclockwise_spinner(stages)
 
 output[1](clockwise_spinner)
 -- output[1](counterclockwise_spinner)
@@ -82,7 +91,7 @@ function process_t(t)
 end
 
 function update_t()
-    output[1].dyn.t = (time * time_mult) / stages
+    output[1].dyn.t = time / steps
 end
 
 -- p is 0-1
@@ -104,20 +113,19 @@ function update_time(p)
             if time == 0 then
                 -- need to start the spinner
                 local c_v = output[1].volts
-                time_mult = 1 - (c_v + high) / range
 
-                output[1].action = make_clockwise_oneoff(stages, c_v, t)
+                output[1].action = make_clockwise_oneoff(c_v, t)
                 output[1]()
                 -- output[1](make_clockwise_oneoff(stages, c_v))
 
                 output[1].done = function()
-                    time_mult = 1
+                    -- time_mult = 1
                     output[1].done = function() end
                     output[1](clockwise_spinner)
                     update_t()
                 end
             else
-                output[1].dyn.t = (t * time_mult) / stages
+                output[1].dyn.t = t / steps
             end
         elseif t < 0 then
             print("T LESS THAn ZERO???")
