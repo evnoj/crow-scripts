@@ -81,6 +81,10 @@ function process_t(t)
     end
 end
 
+function update_t()
+    output[1].dyn.t = (time * time_mult) / stages
+end
+
 -- p is 0-1
 -- 0 is stopped, just above 0 is slowest rotation, 1 is fastest rotation
 function update_time(p)
@@ -110,7 +114,7 @@ function update_time(p)
                     time_mult = 1
                     output[1].done = function() end
                     output[1](clockwise_spinner)
-                    output[1].dyn.t = (t * time_mult) / stages
+                    update_t()
                 end
             else
                 output[1].dyn.t = (t * time_mult) / stages
