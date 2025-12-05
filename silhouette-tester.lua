@@ -8,8 +8,9 @@ hi_center = 5.610094
 -- hi_center = 5.682232
 val_mult = 1.5
 -- t = 1
-t = 0.05
-out = 2
+-- t = 0.05
+t=0.05645752
+out = 1
 stages = 50
 step_size = 0.01
 steps = math.floor((hi - lo_center) / step_size) - 1
@@ -79,25 +80,6 @@ output[out](circle)
 local function round_decimal(n, place)
     return math.floor(place*n + 0.5)/place
 end
-
-local function round_thousandths(n)
-    return math.floor(1000*n + 0.5)/1000
-end
-
-local function round_hundredths()
-    output[1].dyn.pos = math.floor(100*output[1].dyn.pos + 0.5)/100
-    -- return math.floor(100*n + 0.5)/100
-end
-
-local function round_pos()
-    output[1].dyn.pos = round_decimal(output[1].dyn.pos, 100)
-end
-
-rounder = metro.init{ event = round_pos
-                      , time  = 1
-                      , count = -1 -- nb: -1 is 'forever'
-                      }
--- rounder:start()
 
 -- circle = loop{
 --     times(5, {
@@ -236,8 +218,9 @@ handlers = {
         end,
         [3] = function(val)
             val = (val / 9) * (val / 9)
-            t = round_thousandths(val + 0.01)
             output[out].dyn.t = t
+            t = round_decimal(val + 0.01, 1000)
+            -- output[out].dyn.t = t
             -- output[out].dyn.t = t / stages
             -- output[out].dyn.t = t / steps
             -- output[out].dyn.t = t * .96
