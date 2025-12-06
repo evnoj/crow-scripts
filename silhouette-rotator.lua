@@ -2,29 +2,18 @@ low = -5.0
 high = 5.1
 high_wrap = 5.6
 range = high - low
-time = .5
-time_min = .056
+-- time = .5
+time = nil
+direction = nil
+time_min = .045
 time_max = 30
 time_range = time_max - time_min
--- time_mult = 1
 step_size = 0.01
 steps = math.floor((range) / step_size) - 1
-dir = 1
-
--- function make_clockwise_spinner(stages)
---     circle = loop{
---         asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
---             to(low + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
---         }),
---         to(low, 0),
---         to(high_wrap, 0),
---         to(high, 0)
---     }
--- end
 
 clockwise_spinner = loop{
     asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
-        to(low + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(time/steps)})
+        to(low + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(0.5/steps)})
     }),
     to(low, 0),
     to(high_wrap, 0),
@@ -34,7 +23,9 @@ clockwise_spinner = loop{
 function make_clockwise_oneoff(start, t)
     local range = start - low
     local steps_once = math.floor((range) / step_size) - 1
-    -- local time_mult = 1 - (start + high) / range
+
+    -- print('making clockwise oneoff starting at '..start..' with t '..t)
+    -- print('steps once is '..steps_once)
 
     local oneoff = {
         asl._while( dyn{loop_counter = steps_once+1}:step(-1), {
@@ -48,24 +39,32 @@ function make_clockwise_oneoff(start, t)
     return oneoff
 end
 
--- function make_counterclockwise_spinner(stages)
---     local asl = {}
+counterclockwise_spinner = loop{
+    asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
+        to(high - (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(0.5/steps)})
+    }),
+    to(high, 0),
+    to(high_wrap, 0),
+    to(low, 0),
+}
 
---     for i=1,stages do
---         local stage = to(low + (range*i/stages), dyn{t = time/stages})
---         table.insert(asl, stage)
---     end
+function make_counterclockwise_oneoff(start, t)
+    local range = high - start
+    local steps_once = math.floor((range) / step_size) - 1
 
---     table.insert(asl, to(high_wrap, 0))
---     table.insert(asl, to(low, 0))
+    local oneoff = {
+        asl._while( dyn{loop_counter = steps_once+1}:step(-1):wrap(0, steps+1), {
+            to(high - (dyn{step_counter = steps_once}:step(-1) * step_size), dyn{t=(t/steps)})
+        }),
+        to(high, 0),
+        to(high_wrap, 0),
+        to(low, 0),
+    }
 
---     return loop(asl)
--- end
+    return oneoff
+end
 
--- local clockwise_spinner = make_clockwise_spinner(stages)
--- local counterclockwise_spinner = make_counterclockwise_spinner(stages)
-
-output[1](clockwise_spinner)
+-- output[1](clockwise_spinner)
 -- output[1](counterclockwise_spinner)
 
 local function truncate(num)
@@ -96,49 +95,66 @@ end
 
 -- p is 0-1
 -- 0 is stopped, just above 0 is slowest rotation, 1 is fastest rotation
-function update_time(p)
+function update_time(p, dir)
     local t = time_max-(p * time_range)
     -- t = truncate(t)
     if p == 0 then
         t = 0
     end
 
-    if t ~= time then
-        -- if t < .56 then
-        --     return
-        -- end
-        -- print(t)
+    -- print("p: "..p..", t: "..t)
 
-        if t > 0 then
-            if time == 0 then
-                -- need to start the spinner
-                local c_v = output[1].volts
+    local time_changed = t ~= time
+    local dir_changed = dir ~= direction
 
-                output[1].action = make_clockwise_oneoff(c_v, t)
-                output[1]()
-                -- output[1](make_clockwise_oneoff(stages, c_v))
+    if dir_changed then
+        if dir == 1 then -- clockwise
+            -- start clockwise spinner
+            local c_v = output[1].volts
 
-                output[1].done = function()
-                    -- time_mult = 1
-                    output[1].done = function() end
-                    output[1](clockwise_spinner)
-                    update_t()
-                end
-            else
-                output[1].dyn.t = t / steps
+            -- output[1].volts = c_v
+            output[1].action = make_clockwise_oneoff(c_v, t)
+            output[1]()
+
+            output[1].done = function()
+                output[1].done = function() end
+                output[1](clockwise_spinner)
+                update_t()
             end
-        elseif t < 0 then
-            print("T LESS THAn ZERO???")
+            -- output[1].dyn.t = t / steps
+        elseif dir == -1 then -- ccw
+            -- start ccw spinner
+            local c_v = output[1].volts
+
+            -- output[1].volts = c_v
+            output[1].action = make_counterclockwise_oneoff(c_v, t)
+            output[1]()
+
+            output[1].done = function()
+                output[1].done = function() end
+                output[1](counterclockwise_spinner)
+                update_t()
+            end
+            -- output[1].dyn.t = t / steps
         else
-            -- t == 0
+            -- stop spinner
             local c_v = output[1].volts
             output[1].done = function() end
+            -- output[1].volts = output[1].volts
             output[1]({to(c_v, 0)})
         end
 
+        direction = dir
+        time = t
+    elseif time_changed and direction ~= 0 then
+        output[1].dyn.t = t / steps
         time = t
     end
 
+    -- if time_changed and direction ~= 0 then
+    --     output[1].dyn.t = t / steps
+    --     time = t
+    -- end
 end
 
 input[1].mode( 'stream', 0.01 ) -- set input n to 'stream' every time seconds
@@ -147,13 +163,25 @@ input[1].stream = function(volts)
     -- local p = 1 - volts / 5
     local p = volts / 5
     p = truncate(p)
-    p = clamp(p, 0, 1)
+    p = clamp(p, -1, 1)
+
+    local dir = 1
+    if p >= 0.05 then
+        dir = 1
+    elseif p <= -0.05 then
+        dir = -1
+        p = math.abs(p)
+    else
+        p = 0
+        dir = 0
+    end
+
     -- p = p^3
     -- p = 1 - p
     p = biased_curve(p, 0.05, 2, 3)
     -- print(p)
 
-    update_time(p)
+    update_time(p, dir)
 
     -- local t = time_max-(p * time_range)
     -- process_t(t)
