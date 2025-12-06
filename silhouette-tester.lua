@@ -13,7 +13,7 @@ t=0.05645752
 out = 1
 stages = 50
 step_size = 0.01
-steps = math.floor((hi - lo_center) / step_size) - 1
+steps = math.floor((hi - lo) / step_size) - 1
 
 -- circle = loop{
 --     -- to(dyn{lo = -5}, 0),
@@ -27,18 +27,18 @@ steps = math.floor((hi - lo_center) / step_size) - 1
 --     to(5.1, 0),
 -- }
 
-circle = loop{
-    -- to(dyn{lo = -5}, 0),
-    -- to(dyn{hi = 5}, dyn{t = 0.5}),
-    to(dyn{lo = -5}, dyn{t = 0.5}),
-    to(dyn{hi = 5}, 0),
-    -- to(lo, 0)
-    -- to(lo_center, 0),
-    -- to(hi_center, dyn{t = 0.5})
-    -- to(lo_center, dyn{t = t}),
-    -- to(hi_center, 0),
-    -- to(5.1, 0),
-}
+-- circle = loop{
+--     -- to(dyn{lo = -5}, 0),
+--     -- to(dyn{hi = 5}, dyn{t = 0.5}),
+--     to(dyn{lo = -5}, dyn{t = 0.5}),
+--     to(dyn{hi = 5}, 0),
+--     -- to(lo, 0)
+--     -- to(lo_center, 0),
+--     -- to(hi_center, dyn{t = 0.5})
+--     -- to(lo_center, dyn{t = t}),
+--     -- to(hi_center, 0),
+--     -- to(5.1, 0),
+-- }
 
 -- circle = loop({
 --     to(3, dyn{t = t/5}),
@@ -66,14 +66,43 @@ circle = loop{
 --     to(hi_center, 0),
 --     to(hi, 0)
 -- }
+
+-- circle = loop{
+--     -- asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
+--     --     to(lo + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+--     -- }),
+--     -- to(lo + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+--     -- to(lo + (dyn{step_counter = steps}:step(dyn{dir = -1}):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+--     to(lo + (dyn{step_counter = steps}:step(dyn{dir = -1}):wrap(0, steps) * step_size), (dyn{t = t} / steps))
+
+--     -- to(lo_center, 0),
+--     -- to(hi_center, 0),
+--     -- to(hi, 0)
+-- }
+
+-- circle = loop{
+--     to(lo + (dyn{step_counter = steps}:step(dyn{dir = -1}):wrap(0, steps) * step_size), (dyn{t = t} / steps))
+-- }
+
 -- circle = loop{
 --     asl._while( dyn{loop_counter = steps+1}:step(-1):wrap(0, steps+1), {
---         to(lo + (dyn{step_counter = steps}:step(-1):wrap(0, steps) * step_size), dyn{t=(t/steps)})
+--         to(lo + (dyn{step_counter = steps}:step(dyn{dir = -1}):wrap(0, steps) * step_size), (dyn{t = t} / steps)),
 --     }),
---     -- to(lo_center, 0),
---     to(hi_center, 0),
---     to(hi, 0)
 -- }
+
+circle = loop{
+    asl._if(dyn{run=1},
+        {to(dyn{pos=hi}:step(dyn{dir = -1} * step_size):wrap(lo, hi), (dyn{t = t} / steps))}
+    ),
+    asl._if((1 - dyn{run=1}),
+        {to(dyn{pos=hi}, 0.001)}
+    )
+}
+
+-- function pause()
+--     output[1].dyn.
+-- end
+
 output[out](circle)
 -- output[2](circle)
 
@@ -204,7 +233,7 @@ handlers = {
                 val = val * val_mult
                 hi = hi_center + val
             end
-            output[out].dyn.hi = hi
+            -- output[out].dyn.hi = hi
         end,
         [2] = function(val)
             -- print("param 2: "..val)
@@ -214,13 +243,13 @@ handlers = {
                 val = val * val_mult
                 lo = lo_center + val
             end
-            output[out].dyn.lo = lo
+            -- output[out].dyn.lo = lo
         end,
         [3] = function(val)
             val = (val / 9) * (val / 9)
-            output[out].dyn.t = t
-            t = round_decimal(val + 0.01, 1000)
             -- output[out].dyn.t = t
+            t = round_decimal(val + 0.01, 1000)
+            output[out].dyn.t = t
             -- output[out].dyn.t = t / stages
             -- output[out].dyn.t = t / steps
             -- output[out].dyn.t = t * .96
