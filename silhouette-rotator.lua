@@ -75,34 +75,18 @@ local function clamp(n, min, max)
     return math.max(min, math.min(max, n))
 end
 
-function process_t(t)
-    t = truncate(t)
-    if t ~= time then
-        -- if t < .56 then
-        --     return
-        -- end
-        -- print(t)
-
-        output[1].dyn.t = t / stages
-
-        time = t
-    end
-end
-
 function update_t()
     output[1].dyn.t = time / steps
 end
 
+local function calculate_steps(range, step_size)
+    return math.floor((range) / step_size) - 1
+end
+
 -- p is 0-1
--- 0 is stopped, just above 0 is slowest rotation, 1 is fastest rotation
+-- dir is -1 for ccw, 0 for stopped, 1 for clockwise
 function update_time(p, dir)
     local t = time_max-(p * time_range)
-    -- t = truncate(t)
-    if p == 0 then
-        t = 0
-    end
-
-    -- print("p: "..p..", t: "..t)
 
     local time_changed = t ~= time
     local dir_changed = dir ~= direction
@@ -112,36 +96,49 @@ function update_time(p, dir)
             -- start clockwise spinner
             local c_v = output[1].volts
 
-            -- output[1].volts = c_v
+            -- output[1].action = clockwise_spinner
+            -- local range = c_v - low
+            -- local steps_once = calculate_steps(range, step_size)
+            -- print(steps_once)
+            -- output[1].dyn.loop_counter = steps_once + 1
+            -- output[1].dyn.step_counter = steps_once
+            -- output[1].dyn.t = t / steps
+            -- output[1]()
+
             output[1].action = make_clockwise_oneoff(c_v, t)
             output[1]()
-
             output[1].done = function()
                 output[1].done = function() end
                 output[1](clockwise_spinner)
                 update_t()
             end
-            -- output[1].dyn.t = t / steps
         elseif dir == -1 then -- ccw
             -- start ccw spinner
             local c_v = output[1].volts
 
-            -- output[1].volts = c_v
+            -- output[1].action = counterclockwise_spinner
+            -- local range = high - c_v
+            -- local steps_once = calculate_steps(range, step_size)
+            -- print(steps_once)
+            -- output[1].dyn.loop_counter = steps_once + 1
+            -- output[1].dyn.step_counter = steps_once
+            -- output[1].dyn.t = t / steps
+            -- output[1]()
+
             output[1].action = make_counterclockwise_oneoff(c_v, t)
             output[1]()
-
             output[1].done = function()
                 output[1].done = function() end
                 output[1](counterclockwise_spinner)
                 update_t()
             end
-            -- output[1].dyn.t = t / steps
         else
             -- stop spinner
+            -- print('stopping')
             local c_v = output[1].volts
             output[1].done = function() end
-            -- output[1].volts = output[1].volts
-            output[1]({to(c_v, 0)})
+            -- output[1]({to(c_v, 0)})
+            output[1].volts = output[1].volts
         end
 
         direction = dir
@@ -150,11 +147,6 @@ function update_time(p, dir)
         output[1].dyn.t = t / steps
         time = t
     end
-
-    -- if time_changed and direction ~= 0 then
-    --     output[1].dyn.t = t / steps
-    --     time = t
-    -- end
 end
 
 input[1].mode( 'stream', 0.01 ) -- set input n to 'stream' every time seconds
