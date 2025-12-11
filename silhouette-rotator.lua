@@ -13,13 +13,14 @@ range = high - low
 time_range = time_max - time_min
 step_size = 0.01
 steps = math.floor((range) / step_size) - 1
+steps_half = math.floor(steps/2)
 tempo = clock.tempo
 beat_sec = clock.get_beat_sec()
 
 -- STATE VARIABLES
 sync = false
 sync_div = 1/1
-sync_offset = 0
+syncer_offset = 0
 sync_step = 0
 syncer_id = -1
 
@@ -47,7 +48,6 @@ function await_clock()
         input[2].mode( 'clock', clock_in_div)
         sync = true
         spin_synced()
-        syncer_id = clock.run(syncer)
         clock_timeout_checker:start()
     end
 end
@@ -82,32 +82,88 @@ end
 -- })
 
 function syncer()
+    local n = 0
+    local step_error
+
+    -- print("DIV: "..sync_div)
+
     while true do
-        clock.sync(sync_div, sync_offset)
+        clock.sync(syncer_div, syncer_offset)
+        local step = output[1].dyn.step
+        -- print('hey')
         -- output[4]()
 
+        -- local target_step = (sync_step + steps * 1/syncer_loop) % steps
+        local target_step = sync_steps[n + 1]
+        n = (n + 1) % syncer_num_subdiv
+
         -- adjust oscillator time to account for error
-       local step_error = sync_step - output[1].dyn.step
-       local speed_error = step_error / steps * -1 * output[1].dyn.dir
+        step_error = target_step - step
+        if math.abs(step_error) > steps_half then
+            if step_error > 0 then
+                step_error = steps - step_error
+            else
+                step_error = steps + step_error
+            end
+        end
 
-       -- error greater than this is likely incorrect
-       -- TODO this caused problems, maybe a timer that implements it after
-       -- the rotation stabilizes?
-       -- speed_error = clamp(speed_error, -.2, .2)
+        -- print("target step: "..target_step..", step: "..step.."step error: "..step_error)
+        -- local speed_error = step_error / steps * -1 * output[1].dyn.dir
+        local speed_error = step_error / (steps / syncer_num_subdiv) * -1 * output[1].dyn.dir
 
-       local sync_error_adjuster = 1 + speed_error
-       output[1].dyn.sync_error_adjuster = sync_error_adjuster
+        -- error greater than this is likely incorrect
+        -- TODO this caused problems, maybe a timer that implements it after
+        -- the rotation stabilizes?
+        -- speed_error = clamp(speed_error, -.2, .2)
+
+        local sync_error_adjuster = 1 + speed_error
+        output[1].dyn.sync_error_adjuster = sync_error_adjuster
     end
 end
 
+-- function ticker()
+--     tid = clock.run(function()
+--         while true do
+--             clock.sync(1)
+--             print('TICK')
+--         end
+--     end)
+-- end
+
 function new_syncer()
     clock.cancel(syncer_id)
-    syncer_id = clock.run(syncer)
-
-    local current_beat = clock.get_beats()
-    sync_offset = current_beat % sync_div
-    sync_step = output[1].dyn.step
+    -- print("NEW SYNCER")
     output[1].dyn.sync_error_adjuster = 1
+
+    sync_step = output[1].dyn.step
+
+    sync_steps = {}
+    if sync_div > 3/2 then
+        syncer_div = 1
+        syncer_offset = clock.get_beats() % syncer_div
+        syncer_num_subdiv = sync_div
+
+        -- local step = sync_step + math.ceil(steps * 1/sync_div)
+        local step
+        local dir = output[1].dyn.dir
+        for i=1,sync_div do
+            step = (sync_step + math.ceil(steps * i/sync_div) * dir) % steps
+            sync_steps[i] = step
+        end
+    else
+        syncer_div = sync_div
+        syncer_offset = clock.get_beats() % syncer_div
+        syncer_num_subdiv = 1
+        sync_steps[1] = sync_step
+    end
+
+
+    -- local current_beat = clock.get_beats()
+    -- syncer_offset = current_beat % sync_div
+    -- sync_step = output[1].dyn.step
+    -- output[1].dyn.sync_error_adjuster = 1
+
+    syncer_id = clock.run(syncer)
 end
 
 function spin_free()
@@ -190,7 +246,7 @@ function update_time_synced(p, dir, run)
     end
 
     if div ~= sync_div then
-        output[1].dyn.t = (beat_sec * sync_div)
+        output[1].dyn.t = (beat_sec * div)
         sync_div = div
         syncer_dirty = true
     end
