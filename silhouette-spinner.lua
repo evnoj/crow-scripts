@@ -33,6 +33,8 @@ local function clamp(n, min, max)
     return math.max(min, math.min(max, n))
 end
 
+-- local function debug(s) print(s) end
+
 local function biased_curve(p, center, lower_exponent, upper_exponent)
     if p < center then
         return center * ((p / center) ^ lower_exponent)
@@ -67,14 +69,15 @@ clock_timeout_checker = metro.init{
 clock.handlers.tempo_change = function(new_tempo)
     beat_sec = clock.get_beat_sec()
 
-    if math.abs(1 - (new_tempo / tempo)) > .01 then -- ignore spurious tempo changes
-        print("CLOCK CHANGE: "..tempo.." -> "..new_tempo)
-        -- update_offset()
+    if math.abs(1 - (new_tempo / tempo)) > .005 then -- ignore spurious tempo changes
+--         debug("CLOCK CHANGE: "..tempo.." -> "..new_tempo)
+        output[1].dyn.t = (beat_sec * sync_div)
+        new_syncer()
+        tempo = new_tempo
     end
-
-    tempo = new_tempo
 end
 
+-- for troubleshooting use
 -- output[4]({
 --     to(5, 0),
 --     to(5, 0.05),
@@ -85,15 +88,10 @@ function syncer()
     local n = 0
     local step_error
 
-    -- print("DIV: "..sync_div)
-
     while true do
         clock.sync(syncer_div, syncer_offset)
         local step = output[1].dyn.step
-        -- print('hey')
-        -- output[4]()
 
-        -- local target_step = (sync_step + steps * 1/syncer_loop) % steps
         local target_step = sync_steps[n + 1]
         n = (n + 1) % syncer_num_subdiv
 
@@ -107,62 +105,37 @@ function syncer()
             end
         end
 
-        -- print("target step: "..target_step..", step: "..step.."step error: "..step_error)
-        -- local speed_error = step_error / steps * -1 * output[1].dyn.dir
+        -- debug("target step: "..target_step..", step: "..step.." step error: "..step_error)
         local speed_error = step_error / (steps / syncer_num_subdiv) * -1 * output[1].dyn.dir
 
-        -- error greater than this is likely incorrect
-        -- TODO this caused problems, maybe a timer that implements it after
-        -- the rotation stabilizes?
-        -- speed_error = clamp(speed_error, -.2, .2)
-
-        local sync_error_adjuster = 1 + speed_error
+        -- ensure speed adjustment doesn't approach 0
+        local sync_error_adjuster = math.max(1 + speed_error, 0.1)
         output[1].dyn.sync_error_adjuster = sync_error_adjuster
     end
 end
 
--- function ticker()
---     tid = clock.run(function()
---         while true do
---             clock.sync(1)
---             print('TICK')
---         end
---     end)
--- end
-
 function new_syncer()
     clock.cancel(syncer_id)
-    -- print("NEW SYNCER")
-    output[1].dyn.sync_error_adjuster = 1
 
     sync_step = output[1].dyn.step
+    syncer_div = sync_div
+    syncer_num_subdiv = 1
 
+    -- ensure a sync happens at least every 2 seconds
+    while syncer_div * beat_sec >= 2 do
+        syncer_num_subdiv = syncer_num_subdiv + 1
+        syncer_div = sync_div / syncer_num_subdiv
+    end
+    syncer_offset = clock.get_beats() % syncer_div
+
+    local dir = output[1].dyn.dir
     sync_steps = {}
-    if sync_div > 3/2 then
-        syncer_div = 1
-        syncer_offset = clock.get_beats() % syncer_div
-        syncer_num_subdiv = sync_div
-
-        -- local step = sync_step + math.ceil(steps * 1/sync_div)
-        local step
-        local dir = output[1].dyn.dir
-        for i=1,sync_div do
-            step = (sync_step + math.ceil(steps * i/sync_div) * dir) % steps
-            sync_steps[i] = step
-        end
-    else
-        syncer_div = sync_div
-        syncer_offset = clock.get_beats() % syncer_div
-        syncer_num_subdiv = 1
-        sync_steps[1] = sync_step
+    for i=1,syncer_num_subdiv do
+        step = (sync_step + math.ceil(steps * i/syncer_num_subdiv) * dir) % steps
+        sync_steps[i] = step
     end
 
-
-    -- local current_beat = clock.get_beats()
-    -- syncer_offset = current_beat % sync_div
-    -- sync_step = output[1].dyn.step
-    -- output[1].dyn.sync_error_adjuster = 1
-
+    output[1].dyn.sync_error_adjuster = 1
     syncer_id = clock.run(syncer)
 end
 
@@ -196,26 +169,26 @@ function update_time_free(p, dir, run)
 end
 
 div_table = {
-    16/1, -- 0 - .25
-    8/1, -- .25 - .50
-    6/1, -- .50 - .75
-    4/1, -- .75 - 1.00
-    3/1, -- 1.00 - 1.25
-    2/1, -- 1.25 - 1.50
-    3/2, -- 1.50 - 1.75
-    4/3, -- 1.75 - 2.00
-    5/4, -- 2.00 - 2.25
-    1/1, -- 2.25 - 2.50
-    1/1, -- 2.50 - 2.75
-    4/5, -- 2.75 - 3.00
-    3/4, -- 3.00 - 3.25
-    2/3, -- 3.25 - 3.50
-    1/2, -- 3.50 - 3.75
-    1/3, -- 3.75 - 4.00
-    1/4, -- 4.00 - 4.25
-    1/6, -- 4.25 - 4.50
-    1/8, -- 4.50 - 4.75
-    1/16, -- 4.75 - 5.00
+    16/1, -- 16.000,  0.00 - 0.25
+    8/1,  --  8.000,  0.25 - 0.50
+    6/1,  --  6.000,  0.50 - 0.75
+    4/1,  --  4.000,  0.75 - 1.00
+    3/1,  --  3.000,  1.00 - 1.25
+    2/1,  --  2.000,  1.25 - 1.50
+    3/2,  --  1.500,  1.50 - 1.75
+    4/3,  --  1.333,  1.75 - 2.00
+    5/4,  --  1.250,  2.00 - 2.25
+    1/1,  --  1.000,  2.25 - 2.50
+    1/1,  --  1.000,  2.50 - 2.75
+    4/5,  --  0.800,  2.75 - 3.00
+    3/4,  --  0.750,  3.00 - 3.25
+    2/3,  --  0.666,  3.25 - 3.50
+    1/2,  --  0.500,  3.50 - 3.75
+    1/3,  --  0.333,  3.75 - 4.00
+    1/4,  --  0.250,  4.00 - 4.25
+    1/6,  --  0.166,  4.25 - 4.50
+    1/8,  --  0.125,  4.50 - 4.75
+    1/16, --  0.062,  4.75 - 5.00
 }
 
 function update_time_synced(p, dir, run)
@@ -303,14 +276,10 @@ function init()
         }),
     }
 
-    -- output[1].action = spinner
-    -- output[1]()
     output[1](spinner)
 
     input[1].stream = time_parameter_handler
 
     spin_free()
     await_clock()
-    -- synced_spin()
-    -- input[2].mode( 'clock', 1/2)
 end
