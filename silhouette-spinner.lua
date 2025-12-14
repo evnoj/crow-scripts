@@ -1,3 +1,15 @@
+-- crow output 1 is the spinner
+-- crow input 1 is the speed, -5V-5V, negative is clockwise, positive ccw
+-- (and then inverted by spot attenuverter to make positve clockwise and negative ccw)
+-- txi knob 1 is an offset for the speed
+-- txi knob 2 is an attenuverter for crow input 1
+-- crow input 2 is for clock
+-- txi cv 1 is a gate (really threshold at 2.5v) that flips the direction of the spinner
+    -- idea: make negative voltage halt the spinner?
+-- txi cv 2 adds to the knob 2 attenuverter
+    -- -10v-10v, if knob is at noon, then 5v is fully open, -5v is fully closed
+-- idea for cv/knob 3: a slew or "brake" that causes speed changes to change smoothly
+
 -- CONFIGURATION VARIABLES
 clock_in_div = 1/4
 low = -5.0
@@ -43,7 +55,7 @@ local function biased_curve(p, center, lower_exponent, upper_exponent)
     end
 end
 
--- CLOCKWORKS
+-- CLOCKWORK
 function await_clock()
     input[2].mode( 'change', 3, 0.1, 'rising' )
     input[2].change = function()
@@ -139,6 +151,7 @@ function new_syncer()
     syncer_id = clock.run(syncer)
 end
 
+-- FUNCTIONALITY
 function spin_free()
     sync = false
     clock.cancel(syncer_id)
@@ -230,7 +243,7 @@ function update_time_synced(p, dir, run)
 end
 
 function time_parameter_handler(volts)
-    local p = volts / 5
+    local p = txi_vals.rate_multiplier*(volts*txi_vals.rate_attenuverter + txi_vals.rate_offset) / 5
     p = truncate(p)
     p = clamp(p, -1, 1)
 
@@ -254,7 +267,85 @@ function time_parameter_handler(volts)
     end
 end
 
+-- TXI CONTROL
+txi_vals = {
+    param = {},
+    cv = {}
+}
+
+for i=1,2 do
+    txi_vals.param[i] = 0
+    txi_vals.cv[i] = 0
+end
+txi_vals.rate_offset = 0
+txi_vals.rate_attenuverter = 0
+txi_vals.rate_attenuverter_offset = 0
+txi_vals.rate_multiplier = 1
+
+ii.txi.event = function(e, val)
+    if e.name == 'in' then -- don't use 'in' because its a lua keyword
+        e.name = 'cv'
+    end
+    txi_vals[e.name][e.arg] = val
+
+    local handler = txi_handlers[e.name][e.arg]
+    if handler then
+        handler(val)
+    end
+end
+
+txi_handlers = {
+    param = {
+        [1] = function(val)
+            txi_vals.rate_offset = val
+        end,
+        [2] = function(val)
+            txi_vals.rate_attenuverter = val + txi_vals.rate_attenuverter_offset
+        end
+    },
+    cv = {
+        [1] = function(val)
+            if val > 2.5 then
+                txi_vals.rate_multiplier = -1
+            elseif val < -2.5 then
+                txi_vals.rate_multiplier = 0
+            else
+                txi_vals.rate_multiplier = 1
+            end
+        end,
+        [2] = function(val)
+            txi_vals.rate_attenuverter_offset = val
+        end,
+    }
+}
+
+txi_metro = metro.init{
+    time  = 0.002, -- 0.001 caused "event queue full" messages
+    count = -1,
+    event = function()
+        -- txi_handlers.param[n](txi_vals.param[n])
+        -- txi_handlers.cv[n](txi_vals.cv[n])
+
+        ii.txi.get('param', 1)
+        ii.txi.get('in', 1)
+        ii.txi.get('param', 2)
+        ii.txi.get('in', 2)
+    end,
+}
+txi_metro:start()
+
 function init()
+    ii.fastmode(true)
+    -- param 1: offset for crow input 1
+    ii.txi.param_bot(0, -5.01) -- slight error needs to be compensated for
+    ii.txi.param_top(0, 5.01)
+    -- param 2: attenuverter for crow input 1
+    ii.txi.param_bot(1, -1)
+    ii.txi.param_top(1, 1)
+    -- in 2: added to param 2 for crow input 1
+    ii.txi.in_bot(1, -1)
+    ii.txi.in_top(1, 1)
+
     local spinner = loop{
         asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
             asl._if((dyn{run=0}), {
