@@ -1,5 +1,15 @@
--- crow output 1 is the spinner
+-- SILHOUETTE SPINNER: a clickless spinner for Silhouette's SPOT parameter
+-- generates a rising or falling sawtooth wave to perform clickless "circular"
+-- modulation of SPOT, similar to what the attenuverter does with no cable inserted
+-- currently no "magnetic attractor" mechanism like the built-in spinner
+    -- as of 2025/12/14, requires my crow firmware fork: https://github.com/evnoj/crow-ev
+    -- some of my changes may be upstreamed and be available on mainline firmware later
+
+-- crow output 1 is the spinner, plug into spot cv jack on silhouette
+    -- on mine, this only works clickless if the attenuverter is fully ccw (negative)
+    -- this means that the clockwise/counterclockwise are swapped for this script
 -- crow input 1 is the speed, -5V-5V, negative is clockwise, positive ccw
+    -- "0.5V/o" scaling - speed doubles/halves with 0.5v changes
 -- (and then inverted by spot attenuverter to make positve clockwise and negative ccw)
 -- txi knob 1 is an offset for the speed
 -- txi knob 2 is an attenuverter for crow input 1
@@ -175,11 +185,18 @@ end
 -- dir is -1 for ccw, 1 for clockwise
 -- run is 1 for running, 0 for stopped
 function update_time_free(p, dir, run)
-    local t = time_max-(p * time_range)
+    -- local t = time_max-(p * time_range)
+    local t = time_min * 2^((1-p) * 10)
+    ti=t
+    pi=p
+    -- if pr then
+    --     print("t: "..t..", p: "..p)
+    -- end
     output[1].dyn.t = t
     output[1].dyn.dir = dir
     output[1].dyn.run = run
 end
+-- pr=true
 
 div_table = {
     16/1, -- 16.000,  0.00 - 0.25
@@ -259,7 +276,7 @@ function time_parameter_handler(volts)
 
     if not sync then
         -- p = p^3
-        p = biased_curve(p, 0.05, 2, 3) -- maybe not great for CV
+        -- p = biased_curve(p, 0.05, 2, 3) -- maybe not great for CV
 
         update_time_free(p, dir, run)
     else
@@ -269,25 +286,19 @@ end
 
 -- TXI CONTROL
 txi_vals = {
-    param = {},
-    cv = {}
+    -- param = {},
+    -- ['in'] = {}
 }
-
-for i=1,2 do
-    txi_vals.param[i] = 0
-    txi_vals.cv[i] = 0
-end
+-- for i=1,4 do
+--     txi_vals.param[i] = 0
+--     txi_vals.cv[i] = 0
+-- end
 txi_vals.rate_offset = 0
 txi_vals.rate_attenuverter = 0
 txi_vals.rate_attenuverter_offset = 0
 txi_vals.rate_multiplier = 1
 
 ii.txi.event = function(e, val)
-    if e.name == 'in' then -- don't use 'in' because its a lua keyword
-        e.name = 'cv'
-    end
-    txi_vals[e.name][e.arg] = val
-
     local handler = txi_handlers[e.name][e.arg]
     if handler then
         handler(val)
@@ -303,7 +314,7 @@ txi_handlers = {
             txi_vals.rate_attenuverter = val + txi_vals.rate_attenuverter_offset
         end
     },
-    cv = {
+    ['in'] = { -- in is a lua keyword
         [1] = function(val)
             if val > 2.5 then
                 txi_vals.rate_multiplier = -1
@@ -323,9 +334,6 @@ txi_metro = metro.init{
     time  = 0.002, -- 0.001 caused "event queue full" messages
     count = -1,
     event = function()
-        -- txi_handlers.param[n](txi_vals.param[n])
-        -- txi_handlers.cv[n](txi_vals.cv[n])
-
         ii.txi.get('param', 1)
         ii.txi.get('in', 1)
         ii.txi.get('param', 2)
