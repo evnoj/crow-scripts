@@ -144,8 +144,8 @@ function new_syncer()
     syncer_div = sync_div
     syncer_num_subdiv = 1
 
-    -- ensure a sync happens at least every 2 seconds
-    while syncer_div * beat_sec >= 2 do
+    -- ensure a sync happens at least every second
+    while syncer_div * beat_sec >= 1 do
         syncer_num_subdiv = syncer_num_subdiv + 1
         syncer_div = sync_div / syncer_num_subdiv
     end
@@ -176,16 +176,15 @@ function spin_synced()
     sync = true
     input[1].mode( 'stream', 0.01 )
 
-    if output[spinner_out].dyn.run == 1 then
+    if output[spinner_out].dyn.dir ~= 0 then
         output[spinner_out].dyn.t = beat_sec * sync_div
         new_syncer()
     end
 end
 
 -- p is 0-1, maps to time range
--- dir is -1 for ccw, 1 for clockwise
--- run is 1 for running, 0 for stopped
-function update_time_free(p, dir, run)
+-- dir is -1 for ccw, 1 for clockwise, 0 for stopped
+function update_time_free(p, dir)
     -- local t = time_max-(p * time_range)
     local t = time_min * 2^((1-p) * 10)
     ti=t
@@ -195,7 +194,6 @@ function update_time_free(p, dir, run)
     -- end
     output[spinner_out].dyn.t = t
     output[spinner_out].dyn.dir = dir
-    output[spinner_out].dyn.run = run
 end
 -- pr=true
 
@@ -222,34 +220,27 @@ div_table = {
     1/16, --  0.062,  4.75 - 5.00
 }
 
-function update_time_synced(p, dir, run)
+function update_time_synced(p, dir)
     local idx = math.ceil(p * 20)
     local div = div_table[idx] -- 5/19 = 0.26315
-    local running = output[spinner_out].dyn.run
     local current_dir = output[spinner_out].dyn.dir
     local syncer_dirty = false
 
-    if run == 1 and running == 0 then
-        -- starting
-        output[spinner_out].dyn.run = 1
-        syncer_dirty = true
-    elseif run == 0 then
-        if running == 1 then
+    if dir ~= current_dir then
+        if dir == 0 then
             -- stopping
             clock.cancel(syncer_id)
             syncer_id = -1
-            output[spinner_out].dyn.run = 0
+            output[spinner_out].dyn.dir = 0
+
+            return
+        else
+            output[spinner_out].dyn.dir = dir
+            syncer_dirty = true
         end
-
-        return
     end
 
-    if dir ~= current_dir then
-        output[spinner_out].dyn.dir = dir
-        syncer_dirty = true
-    end
-
-    if div ~= sync_div then
+    if div and div ~= sync_div then
         output[spinner_out].dyn.t = (beat_sec * div)
         sync_div = div
         syncer_dirty = true
@@ -266,22 +257,21 @@ function time_parameter_handler(volts)
     p = clamp(p, -1, 1)
 
     local dir = -1
-    local run = 1
     if p <= -0.05 then
         dir = 1
         p = math.abs(p)
     elseif p < 0.05 then
         p = 0
-        run = 0
+        dir = 0
     end
 
     if not sync then
         -- p = p^3
         -- p = biased_curve(p, 0.05, 2, 3) -- maybe not great for CV
 
-        update_time_free(p, dir, run)
+        update_time_free(p, dir)
     else
-        update_time_synced(p, dir, run)
+        update_time_synced(p, dir)
     end
 end
 
@@ -361,15 +351,8 @@ function init()
     end)
 
     local spinner = loop{
-        -- TODO: remove need for 'run' by simply setting dir to 0
         asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
-            asl._if((dyn{run=0}), {
-                to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-            }),
-            asl._if((1 - (dyn{run=0})), {
-                -- if not running, need to step opposite way since while loop does a step on each conditional check
-                to(low + (dyn{step = steps+1}:step(dyn{dir = -1} * -1) * step_size), 0.001)
-            })
+            to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
         }),
         -- falling
         asl._if(1 - dyn{dir = -1}, {
