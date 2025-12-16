@@ -29,6 +29,7 @@ high = 5.1
 -- likely will want to change time_parameter_handler if you change these
 time_min = .045 -- speeds faster than this will start clicking
 time_max = 30
+spinner_out = 4
 
 -- CONVENIENCE VARIABLES
 range = high - low
@@ -93,7 +94,7 @@ clock.handlers.tempo_change = function(new_tempo)
 
     if math.abs(1 - (new_tempo / tempo)) > .005 then -- ignore spurious tempo changes
 --         debug("CLOCK CHANGE: "..tempo.." -> "..new_tempo)
-        output[1].dyn.t = (beat_sec * sync_div)
+        output[spinner_out].dyn.t = (beat_sec * sync_div)
         new_syncer()
         tempo = new_tempo
     end
@@ -112,7 +113,7 @@ function syncer()
 
     while true do
         clock.sync(syncer_div, syncer_offset)
-        local step = output[1].dyn.step
+        local step = output[spinner_out].dyn.step
 
         local target_step = sync_steps[n + 1]
         n = (n + 1) % syncer_num_subdiv
@@ -128,18 +129,18 @@ function syncer()
         end
 
         -- debug("target step: "..target_step..", step: "..step.." step error: "..step_error)
-        local speed_error = step_error / (steps / syncer_num_subdiv) * -1 * output[1].dyn.dir
+        local speed_error = step_error / (steps / syncer_num_subdiv) * -1 * output[spinner_out].dyn.dir
 
         -- ensure speed adjustment doesn't approach 0
         local sync_error_adjuster = math.max(1 + speed_error, 0.1)
-        output[1].dyn.sync_error_adjuster = sync_error_adjuster
+        output[spinner_out].dyn.sync_error_adjuster = sync_error_adjuster
     end
 end
 
 function new_syncer()
     clock.cancel(syncer_id)
 
-    sync_step = output[1].dyn.step
+    sync_step = output[spinner_out].dyn.step
     syncer_div = sync_div
     syncer_num_subdiv = 1
 
@@ -150,14 +151,14 @@ function new_syncer()
     end
     syncer_offset = clock.get_beats() % syncer_div
 
-    local dir = output[1].dyn.dir
+    local dir = output[spinner_out].dyn.dir
     sync_steps = {}
     for i=1,syncer_num_subdiv do
         step = (sync_step + math.ceil(steps * i/syncer_num_subdiv) * dir) % steps
         sync_steps[i] = step
     end
 
-    output[1].dyn.sync_error_adjuster = 1
+    output[spinner_out].dyn.sync_error_adjuster = 1
     syncer_id = clock.run(syncer)
 end
 
@@ -168,15 +169,15 @@ function spin_free()
     syncer_id = -1
 
     input[1].mode( 'stream', 0.001 )
-    output[1].dyn.sync_error_adjuster = 1
+    output[spinner_out].dyn.sync_error_adjuster = 1
 end
 
 function spin_synced()
     sync = true
     input[1].mode( 'stream', 0.01 )
 
-    if output[1].dyn.run == 1 then
-        output[1].dyn.t = beat_sec * sync_div
+    if output[spinner_out].dyn.run == 1 then
+        output[spinner_out].dyn.t = beat_sec * sync_div
         new_syncer()
     end
 end
@@ -192,9 +193,9 @@ function update_time_free(p, dir, run)
     -- if pr then
     --     print("t: "..t..", p: "..p)
     -- end
-    output[1].dyn.t = t
-    output[1].dyn.dir = dir
-    output[1].dyn.run = run
+    output[spinner_out].dyn.t = t
+    output[spinner_out].dyn.dir = dir
+    output[spinner_out].dyn.run = run
 end
 -- pr=true
 
@@ -224,32 +225,32 @@ div_table = {
 function update_time_synced(p, dir, run)
     local idx = math.ceil(p * 20)
     local div = div_table[idx] -- 5/19 = 0.26315
-    local running = output[1].dyn.run
-    local current_dir = output[1].dyn.dir
+    local running = output[spinner_out].dyn.run
+    local current_dir = output[spinner_out].dyn.dir
     local syncer_dirty = false
 
     if run == 1 and running == 0 then
         -- starting
-        output[1].dyn.run = 1
+        output[spinner_out].dyn.run = 1
         syncer_dirty = true
     elseif run == 0 then
         if running == 1 then
             -- stopping
             clock.cancel(syncer_id)
             syncer_id = -1
-            output[1].dyn.run = 0
+            output[spinner_out].dyn.run = 0
         end
 
         return
     end
 
     if dir ~= current_dir then
-        output[1].dyn.dir = dir
+        output[spinner_out].dyn.dir = dir
         syncer_dirty = true
     end
 
     if div ~= sync_div then
-        output[1].dyn.t = (beat_sec * div)
+        output[spinner_out].dyn.t = (beat_sec * div)
         sync_div = div
         syncer_dirty = true
     end
@@ -344,22 +345,29 @@ txi_metro:start()
 
 function init()
     ii.fastmode(true)
-    -- param 1: offset for crow input 1
-    ii.txi.param_bot(0, -5.01) -- slight error needs to be compensated for
-    ii.txi.param_top(0, 5.01)
-    -- param 2: attenuverter for crow input 1
-    ii.txi.param_bot(1, -1)
-    ii.txi.param_top(1, 1)
-    -- in 2: added to param 2 for crow input 1
-    ii.txi.in_bot(1, -1)
-    ii.txi.in_top(1, 1)
+
+    -- delay on powerup to wait for txi to be initialized
+    clock.run(function()
+        clock.sleep(1)
+        -- param 1: offset for crow input 1
+        ii.txi.param_bot(0, -5.01) -- slight error needs to be compensated for
+        ii.txi.param_top(0, 5.01)
+        -- param 2: attenuverter for crow input 1
+        ii.txi.param_bot(1, -1)
+        ii.txi.param_top(1, 1)
+        -- in 2: added to param 2 for crow input 1
+        ii.txi.in_bot(1, -1)
+        ii.txi.in_top(1, 1)
+    end)
 
     local spinner = loop{
+        -- TODO: remove need for 'run' by simply setting dir to 0
         asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
             asl._if((dyn{run=0}), {
                 to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
             }),
             asl._if((1 - (dyn{run=0})), {
+                -- if not running, need to step opposite way since while loop does a step on each conditional check
                 to(low + (dyn{step = steps+1}:step(dyn{dir = -1} * -1) * step_size), 0.001)
             })
         }),
@@ -375,7 +383,7 @@ function init()
         }),
     }
 
-    output[1](spinner)
+    output[spinner_out](spinner)
 
     input[1].stream = time_parameter_handler
 
