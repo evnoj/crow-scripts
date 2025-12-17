@@ -14,11 +14,10 @@
 -- txi knob 1 is an offset for the speed
 -- txi knob 2 is an attenuverter for crow input 1
 -- crow input 2 is for clock
--- txi cv 1 is a gate (really threshold at 2.5v) that flips the direction of the spinner
-    -- idea: make negative voltage halt the spinner?
+-- txi cv 1: above 2.5V flips direction, less than -2.5V stops spinner
 -- txi cv 2 adds to the knob 2 attenuverter
     -- -10v-10v, if knob is at noon, then 5v is fully open, -5v is fully closed
--- idea for cv/knob 3: a slew or "brake" that causes speed changes to change smoothly
+-- idea for cv/knob: a slew or "brake" that causes speed changes to change smoothly
 
 -- CONFIGURATION VARIABLES
 clock_in_div = 1/4
@@ -37,6 +36,7 @@ time_range = time_max - time_min
 step_size = 0.01
 steps = math.floor((range) / step_size) - 1
 steps_half = math.floor(steps/2)
+-- step_size_normalized = 2 / steps
 tempo = clock.tempo
 beat_sec = clock.get_beat_sec()
 
@@ -198,16 +198,16 @@ end
 -- pr=true
 
 div_table = {
-    16/1, -- 16.000,  0.00 - 0.25
-    8/1,  --  8.000,  0.25 - 0.50
-    6/1,  --  6.000,  0.50 - 0.75
-    4/1,  --  4.000,  0.75 - 1.00
-    3/1,  --  3.000,  1.00 - 1.25
-    2/1,  --  2.000,  1.25 - 1.50
-    3/2,  --  1.500,  1.50 - 1.75
-    4/3,  --  1.333,  1.75 - 2.00
-    5/4,  --  1.250,  2.00 - 2.25
-    1/1,  --  1.000,  2.25 - 2.50
+    1/1,  -- placeholder
+    16/1, -- 16.000,  0.25 - 0.50
+    8/1,  --  8.000,  0.50 - 0.75
+    6/1,  --  6.000,  0.75 - 1.00
+    4/1,  --  4.000,  1.00 - 1.25
+    3/1,  --  3.000,  1.25 - 1.50
+    2/1,  --  2.000,  1.50 - 1.75
+    3/2,  --  1.500,  1.75 - 2.00
+    4/3,  --  1.333,  2.00 - 2.25
+    5/4,  --  1.250,  2.25 - 2.50
     1/1,  --  1.000,  2.50 - 2.75
     4/5,  --  0.800,  2.75 - 3.00
     3/4,  --  0.750,  3.00 - 3.25
@@ -352,6 +352,8 @@ function init()
 
     local spinner = loop{
         asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
+            -- this caused event queue full at high speeds
+            -- to(0.05 + 5.05 * (-1 + (dyn{step=steps+1} * step_size_normalized))^dyn{curve=1}, ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
             to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
         }),
         -- falling
