@@ -11,12 +11,14 @@
 -- crow input 1 is the speed, -5V-5V, negative is clockwise, positive ccw
     -- "0.5V/o" scaling - speed doubles/halves with 0.5v changes
 -- (and then inverted by spot attenuverter to make positve clockwise and negative ccw)
--- txi knob 1 is an offset for the speed
--- txi knob 2 is an attenuverter for crow input 1
+-- txi knob 1 is a coarse offset for the speed
+-- txi knob 2 is a fine offset for the speed
+    -- noon is no offset, fully CW is double speed, fully CCW is half speed
+-- txi knob 3 is an attenuverter for crow input 1
 -- crow input 2 is for clock
 -- txi cv 1: above 2.5V flips direction, less than -2.5V stops spinner
--- txi cv 2 adds to the knob 2 attenuverter
-    -- -10v-10v, if knob is at noon, then 5v is fully open, -5v is fully closed
+-- txi cv 2 adds to the knob 3 attenuverter (making it like an inverting VCA)
+    -- -10v-10v, if txi knob 3 is at noon, then 5v is fully open, -5v is fully closed
 -- idea for cv/knob: a slew or "brake" that causes speed changes to change smoothly
 
 -- CONFIGURATION VARIABLES
@@ -26,7 +28,7 @@ high = 5.1
 -- min and max time for a cycle (a.k.a. spin speed, min time is max speed)
 -- the parameter scaling for time is tuned for these values
 -- likely will want to change time_parameter_handler if you change these
-time_min = .045 -- speeds faster than this will start clicking
+time_min = .026 -- speeds faster than this cause event queue full
 time_max = 30
 spinner_out = 4
 
@@ -48,6 +50,7 @@ sync_step = 0
 syncer_id = -1
 
 -- UTILITIES
+-- truncates digits after thousandths place
 local function truncate(num)
     return math.floor(num * 1000) / 1000
 end
@@ -285,6 +288,7 @@ txi_vals = {
 --     txi_vals.cv[i] = 0
 -- end
 txi_vals.rate_offset = 0
+txi_vals.rate_offset_fine = 0
 txi_vals.rate_attenuverter = 0
 txi_vals.rate_attenuverter_offset = 0
 txi_vals.rate_multiplier = 1
@@ -299,11 +303,21 @@ end
 txi_handlers = {
     param = {
         [1] = function(val)
-            txi_vals.rate_offset = val
+            txi_vals.rate_offset = val + txi_vals.rate_offset_fine
         end,
         [2] = function(val)
+            -- virtual noon notch
+            if not (val <= -0.1 or val >= 0.1) then
+                -- print('notcho')
+                val = 0
+            -- else
+                -- print('no notcho')
+            end
+            txi_vals.rate_offset_fine = val
+        end,
+        [3] = function(val)
             txi_vals.rate_attenuverter = val + txi_vals.rate_attenuverter_offset
-        end
+        end,
     },
     ['in'] = { -- in is a lua keyword
         [1] = function(val)
@@ -329,6 +343,7 @@ txi_metro = metro.init{
         ii.txi.get('in', 1)
         ii.txi.get('param', 2)
         ii.txi.get('in', 2)
+        ii.txi.get('param', 3)
     end,
 }
 txi_metro:start()
@@ -339,12 +354,15 @@ function init()
     -- delay on powerup to wait for txi to be initialized
     clock.run(function()
         clock.sleep(1)
-        -- param 1: offset for crow input 1
+        -- param 1: spinner speed/direction coarse, offset for crow input 1
         ii.txi.param_bot(0, -5.01) -- slight error needs to be compensated for
         ii.txi.param_top(0, 5.01)
-        -- param 2: attenuverter for crow input 1
-        ii.txi.param_bot(1, -1)
-        ii.txi.param_top(1, 1)
+        -- param 2: spinner speed/direction fine, added to param 1
+        ii.txi.param_bot(1, -0.5)
+        ii.txi.param_top(1, 0.5)
+        -- param 3: attenuverter for crow input 1
+        ii.txi.param_bot(2, -1)
+        ii.txi.param_top(2, 1)
         -- in 2: added to param 2 for crow input 1
         ii.txi.in_bot(1, -1)
         ii.txi.in_top(1, 1)
