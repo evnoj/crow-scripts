@@ -28,7 +28,7 @@ high = 5.1
 -- min and max time for a cycle (a.k.a. spin speed, min time is max speed)
 -- the parameter scaling for time is tuned for these values
 -- likely will want to change time_parameter_handler if you change these
-time_min = .026 -- speeds faster than this cause event queue full
+time_min = .027 -- speeds faster than this cause event queue full
 time_max = 30
 spinner_out = 4
 
@@ -260,6 +260,7 @@ function time_parameter_handler(volts)
     p = clamp(p, -1, 1)
 
     local dir = -1
+    -- center deadzone
     if p <= -0.05 then
         dir = 1
         p = math.abs(p)
@@ -366,30 +367,58 @@ function init()
         -- in 2: added to param 2 for crow input 1
         ii.txi.in_bot(1, -1)
         ii.txi.in_top(1, 1)
+
+        -- wait for txi param changes to take effect
+        clock.sleep(0.1)
+
+        local spinner = loop{
+            asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
+                -- this caused event queue full at high speeds
+                -- to(0.05 + 5.05 * (-1 + (dyn{step=steps+1} * step_size_normalized))^dyn{curve=1}, ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
+                to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
+            }),
+            -- falling
+            asl._if(1 - dyn{dir = -1}, {
+                to(low, 0),
+                to(high, 0),
+            }),
+            -- rising
+            asl._if(dyn{dir = -1}, {
+                to(high, 0),
+                to(low, 0),
+            }),
+        }
+
+        output[spinner_out](spinner)
+
+        input[1].stream = time_parameter_handler
+
+        spin_free()
+        await_clock()
     end)
 
-    local spinner = loop{
-        asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
-            -- this caused event queue full at high speeds
-            -- to(0.05 + 5.05 * (-1 + (dyn{step=steps+1} * step_size_normalized))^dyn{curve=1}, ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-            to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-        }),
-        -- falling
-        asl._if(1 - dyn{dir = -1}, {
-            to(low, 0),
-            to(high, 0),
-        }),
-        -- rising
-        asl._if(dyn{dir = -1}, {
-            to(high, 0),
-            to(low, 0),
-        }),
-    }
+    -- local spinner = loop{
+    --     asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
+    --         -- this caused event queue full at high speeds
+    --         -- to(0.05 + 5.05 * (-1 + (dyn{step=steps+1} * step_size_normalized))^dyn{curve=1}, ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
+    --         to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
+    --     }),
+    --     -- falling
+    --     asl._if(1 - dyn{dir = -1}, {
+    --         to(low, 0),
+    --         to(high, 0),
+    --     }),
+    --     -- rising
+    --     asl._if(dyn{dir = -1}, {
+    --         to(high, 0),
+    --         to(low, 0),
+    --     }),
+    -- }
 
-    output[spinner_out](spinner)
+    -- output[spinner_out](spinner)
 
-    input[1].stream = time_parameter_handler
+    -- input[1].stream = time_parameter_handler
 
-    spin_free()
-    await_clock()
+    -- spin_free()
+    -- await_clock()
 end
