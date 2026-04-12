@@ -17,7 +17,7 @@
 -- txi knob 3 is an attenuverter for crow input 1
 -- crow input 2 is for clock
 -- txi cv 1: above 2.5V flips direction, less than -2.5V stops spinner
--- txi cv 2 adds to the knob 3 attenuverter (making it like an inverting VCA)
+-- txi cv 3 adds to the knob 3 attenuverter (making it like an inverting VCA)
     -- -10v-10v, if txi knob 3 is at noon, then 5v is fully open, -5v is fully closed
 -- idea for cv/knob: a slew or "brake" that causes speed changes to change smoothly
 
@@ -330,7 +330,7 @@ txi_handlers = {
                 txi_vals.rate_multiplier = 1
             end
         end,
-        [2] = function(val)
+        [3] = function(val)
             txi_vals.rate_attenuverter_offset = val
         end,
     }
@@ -364,9 +364,9 @@ function init()
         -- param 3: attenuverter for crow input 1
         ii.txi.param_bot(2, -1)
         ii.txi.param_top(2, 1)
-        -- in 2: added to param 2 for crow input 1
-        ii.txi.in_bot(1, -1)
-        ii.txi.in_top(1, 1)
+        -- in 3: added to param 3 for crow input 1, making it a VCA
+        ii.txi.in_bot(2, -1)
+        ii.txi.in_top(2, 1)
 
         -- wait for txi param changes to take effect
         clock.sleep(0.1)
