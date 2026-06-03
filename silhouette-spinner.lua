@@ -1,4 +1,9 @@
 -- SILHOUETTE SPINNER: a clickless spinner for Silhouette's SPOT parameter
+-- requires my firmware fork: https://github.com/evnoj/crow-ev
+    -- "spinner" output mode
+    -- telexi "all" command support
+        -- also requires telexi fork: https://github.com/evnoj/telex-ev
+
 -- generates a rising or falling sawtooth wave to perform clickless "circular"
 -- modulation of SPOT, similar to what the attenuverter does with no cable inserted
 -- currently no "magnetic attractor" mechanism like the built-in spinner
@@ -22,32 +27,13 @@
 -- idea for cv/knob: a slew or "brake" that causes speed changes to change smoothly
 
 -- CONFIGURATION VARIABLES
-clock_in_div = 1/4
-low = -5.0
-high = 5.1
--- min and max time for a cycle (a.k.a. spin speed, min time is max speed)
--- the parameter scaling for time is tuned for these values
--- likely will want to change time_parameter_handler if you change these
-time_min = .027 -- speeds faster than this cause event queue full
-time_max = 30
-spinner_out = 4
-
--- CONVENIENCE VARIABLES
-range = high - low
-time_range = time_max - time_min
-step_size = 0.01
-steps = math.floor((range) / step_size) - 1
-steps_half = math.floor(steps/2)
--- step_size_normalized = 2 / steps
-tempo = clock.tempo
-beat_sec = clock.get_beat_sec()
-
--- STATE VARIABLES
-sync = false
-sync_div = 1/1
-syncer_offset = 0
-sync_step = 0
-syncer_id = -1
+spinner_out = 4 -- the crow output that the spinner uses
+clock_in_div = 1/4 -- clock div for clock input
+-- bottom and top of voltage range
+bottom = -5.0
+top = 5.0
+-- min time in ms for a cycle, max time is 1024*min
+time_min = 40
 
 -- UTILITIES
 -- truncates digits after thousandths place
@@ -59,23 +45,12 @@ local function clamp(n, min, max)
     return math.max(min, math.min(max, n))
 end
 
--- local function debug(s) print(s) end
-
-local function biased_curve(p, center, lower_exponent, upper_exponent)
-    if p < center then
-        return center * ((p / center) ^ lower_exponent)
-    else
-        return 1 - (1 - center) * (((1 - p) / (1 - center)) ^ upper_exponent)
-    end
-end
-
 -- CLOCKWORK
 function await_clock()
     input[2].mode( 'change', 3, 0.1, 'rising' )
     input[2].change = function()
         input[2].mode( 'clock', clock_in_div)
-        sync = true
-        spin_synced()
+        output[spinner_out].clocked = true
         clock_timeout_checker:start()
     end
 end
@@ -84,7 +59,7 @@ clock_timeout_checker = metro.init{
     event = function()
         if clock.time_since_last_input() > 4 then -- 4 second timeout
             clock_timeout_checker:stop()
-            spin_free()
+            output[spinner_out].clocked = false
             await_clock()
         end
     end,
@@ -92,111 +67,14 @@ clock_timeout_checker = metro.init{
     count = -1
 }
 
-clock.handlers.tempo_change = function(new_tempo)
-    beat_sec = clock.get_beat_sec()
-
-    if math.abs(1 - (new_tempo / tempo)) > .005 then -- ignore spurious tempo changes
---         debug("CLOCK CHANGE: "..tempo.." -> "..new_tempo)
-        output[spinner_out].dyn.t = (beat_sec * sync_div)
-        new_syncer()
-        tempo = new_tempo
-    end
-end
-
--- for troubleshooting use
--- output[4]({
---     to(5, 0),
---     to(5, 0.05),
---     to(0, 0)
--- })
-
-function syncer()
-    local n = 0
-    local step_error
-
-    while true do
-        clock.sync(syncer_div, syncer_offset)
-        local step = output[spinner_out].dyn.step
-
-        local target_step = sync_steps[n + 1]
-        n = (n + 1) % syncer_num_subdiv
-
-        -- adjust oscillator time to account for error
-        step_error = target_step - step
-        if math.abs(step_error) > steps_half then
-            if step_error > 0 then
-                step_error = steps - step_error
-            else
-                step_error = steps + step_error
-            end
-        end
-
-        -- debug("target step: "..target_step..", step: "..step.." step error: "..step_error)
-        local speed_error = step_error / (steps / syncer_num_subdiv) * -1 * output[spinner_out].dyn.dir
-
-        -- ensure speed adjustment doesn't approach 0
-        local sync_error_adjuster = math.max(1 + speed_error, 0.1)
-        output[spinner_out].dyn.sync_error_adjuster = sync_error_adjuster
-    end
-end
-
-function new_syncer()
-    clock.cancel(syncer_id)
-
-    sync_step = output[spinner_out].dyn.step
-    syncer_div = sync_div
-    syncer_num_subdiv = 1
-
-    -- ensure a sync happens at least every second
-    while syncer_div * beat_sec >= 1 do
-        syncer_num_subdiv = syncer_num_subdiv + 1
-        syncer_div = sync_div / syncer_num_subdiv
-    end
-    syncer_offset = clock.get_beats() % syncer_div
-
-    local dir = output[spinner_out].dyn.dir
-    sync_steps = {}
-    for i=1,syncer_num_subdiv do
-        step = (sync_step + math.ceil(steps * i/syncer_num_subdiv) * dir) % steps
-        sync_steps[i] = step
-    end
-
-    output[spinner_out].dyn.sync_error_adjuster = 1
-    syncer_id = clock.run(syncer)
-end
-
 -- FUNCTIONALITY
-function spin_free()
-    sync = false
-    clock.cancel(syncer_id)
-    syncer_id = -1
-
-    input[1].mode( 'stream', 0.001 )
-    output[spinner_out].dyn.sync_error_adjuster = 1
-end
-
-function spin_synced()
-    sync = true
-    input[1].mode( 'stream', 0.01 )
-
-    if output[spinner_out].dyn.dir ~= 0 then
-        output[spinner_out].dyn.t = beat_sec * sync_div
-        new_syncer()
-    end
-end
-
--- p is 0-1, maps to time range
+-- p is 0-1
 -- dir is -1 for ccw, 1 for clockwise, 0 for stopped
 function update_time_free(p, dir)
-    -- local t = time_max-(p * time_range)
     local t = time_min * 2^((1-p) * 10)
-    ti=t
-    pi=p
-    -- if pr then
-    --     print("t: "..t..", p: "..p)
-    -- end
-    output[spinner_out].dyn.t = t
-    output[spinner_out].dyn.dir = dir
+    output[spinner_out].time = t
+    output[spinner_out].direction = dir
+    -- print(t)
 end
 -- pr=true
 
@@ -224,33 +102,12 @@ div_table = {
 }
 
 function update_time_synced(p, dir)
+    output[spinner_out].direction = dir
+
     local idx = math.ceil(p * 20)
-    local div = div_table[idx] -- 5/19 = 0.26315
-    local current_dir = output[spinner_out].dyn.dir
-    local syncer_dirty = false
-
-    if dir ~= current_dir then
-        if dir == 0 then
-            -- stopping
-            clock.cancel(syncer_id)
-            syncer_id = -1
-            output[spinner_out].dyn.dir = 0
-
-            return
-        else
-            output[spinner_out].dyn.dir = dir
-            syncer_dirty = true
-        end
-    end
-
-    if div and div ~= sync_div then
-        output[spinner_out].dyn.t = (beat_sec * div)
-        sync_div = div
-        syncer_dirty = true
-    end
-
-    if syncer_dirty then
-        new_syncer()
+    div = div_table[idx]
+    if div then
+        output[spinner_out].spinner_clock_div = div
     end
 end
 
@@ -269,10 +126,7 @@ function time_parameter_handler(volts)
         dir = 0
     end
 
-    if not sync then
-        -- p = p^3
-        -- p = biased_curve(p, 0.05, 2, 3) -- maybe not great for CV
-
+    if not output[spinner_out].clocked then
         update_time_free(p, dir)
     else
         update_time_synced(p, dir)
@@ -294,57 +148,57 @@ txi_vals.rate_attenuverter = 0
 txi_vals.rate_attenuverter_offset = 0
 txi_vals.rate_multiplier = 1
 
-ii.txi.event = function(e, val)
-    local handler = txi_handlers[e.name][e.arg]
-    if handler then
-        handler(val)
+-- receives table where values 1-4 are params 1-4, 5-8 are ins 1-4
+ii.txi.event = function(e, data)
+    for i=1,8 do
+        local handler = txi_poll_handlers[i]
+        if handler then
+            handler(data[i])
+        end
     end
 end
 
-txi_handlers = {
-    param = {
-        [1] = function(val)
-            txi_vals.rate_offset = val + txi_vals.rate_offset_fine
-        end,
-        [2] = function(val)
-            -- virtual noon notch
-            if not (val <= -0.1 or val >= 0.1) then
-                -- print('notcho')
-                val = 0
-            -- else
-                -- print('no notcho')
-            end
-            txi_vals.rate_offset_fine = val
-        end,
-        [3] = function(val)
-            txi_vals.rate_attenuverter = val + txi_vals.rate_attenuverter_offset
-        end,
-    },
-    ['in'] = { -- in is a lua keyword
-        [1] = function(val)
-            if val > 2.5 then
-                txi_vals.rate_multiplier = -1
-            elseif val < -2.5 then
-                txi_vals.rate_multiplier = 0
-            else
-                txi_vals.rate_multiplier = 1
-            end
-        end,
-        [3] = function(val)
-            txi_vals.rate_attenuverter_offset = val
-        end,
-    }
+txi_poll_handlers = {
+    -- param 1
+    [1] = function(val)
+        txi_vals.rate_offset = val + txi_vals.rate_offset_fine
+    end,
+    -- param 2
+    [2] = function(val)
+        -- virtual noon notch
+        if not (val <= -0.1 or val >= 0.1) then
+            -- print('notcho')
+            val = 0
+        -- else
+            -- print('no notcho')
+        end
+        txi_vals.rate_offset_fine = val
+    end,
+    -- param 3
+    [3] = function(val)
+        txi_vals.rate_attenuverter = val + txi_vals.rate_attenuverter_offset
+    end,
+    -- in 1
+    [5] = function(val)
+        if val > 2.5 then
+            txi_vals.rate_multiplier = -1
+        elseif val < -2.5 then
+            txi_vals.rate_multiplier = 0
+        else
+            txi_vals.rate_multiplier = 1
+        end
+    end,
+    -- in 3
+    [7] = function(val)
+        txi_vals.rate_attenuverter_offset = val
+    end,
 }
 
 txi_metro = metro.init{
-    time  = 0.002, -- 0.001 caused "event queue full" messages
+    time  = 0.002,
     count = -1,
     event = function()
-        ii.txi.get('param', 1)
-        ii.txi.get('in', 1)
-        ii.txi.get('param', 2)
-        ii.txi.get('in', 2)
-        ii.txi.get('param', 3)
+        ii.txi.get('all')
     end,
 }
 txi_metro:start()
@@ -371,54 +225,13 @@ function init()
         -- wait for txi param changes to take effect
         clock.sleep(0.1)
 
-        local spinner = loop{
-            asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
-                -- this caused event queue full at high speeds
-                -- to(0.05 + 5.05 * (-1 + (dyn{step=steps+1} * step_size_normalized))^dyn{curve=1}, ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-                to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-            }),
-            -- falling
-            asl._if(1 - dyn{dir = -1}, {
-                to(low, 0),
-                to(high, 0),
-            }),
-            -- rising
-            asl._if(dyn{dir = -1}, {
-                to(high, 0),
-                to(low, 0),
-            }),
-        }
-
-        output[spinner_out](spinner)
-
+        input[1].mode( 'stream', 0.001 )
         input[1].stream = time_parameter_handler
 
-        spin_free()
+        output[spinner_out].mode = "spinner"
+        output[spinner_out].bottom = bottom
+        output[spinner_out].top = top
+
         await_clock()
     end)
-
-    -- local spinner = loop{
-    --     asl._while(dyn{step = steps+1}:step(dyn{dir = -1}):wrap(0, steps+1), {
-    --         -- this caused event queue full at high speeds
-    --         -- to(0.05 + 5.05 * (-1 + (dyn{step=steps+1} * step_size_normalized))^dyn{curve=1}, ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-    --         to(low + (dyn{step = steps+1} * step_size), ((dyn{t = 0.5} / steps) * dyn{sync_error_adjuster = 1}))
-    --     }),
-    --     -- falling
-    --     asl._if(1 - dyn{dir = -1}, {
-    --         to(low, 0),
-    --         to(high, 0),
-    --     }),
-    --     -- rising
-    --     asl._if(dyn{dir = -1}, {
-    --         to(high, 0),
-    --         to(low, 0),
-    --     }),
-    -- }
-
-    -- output[spinner_out](spinner)
-
-    -- input[1].stream = time_parameter_handler
-
-    -- spin_free()
-    -- await_clock()
 end
