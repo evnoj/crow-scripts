@@ -78,7 +78,7 @@ function update_time_free(p, dir)
 end
 -- pr=true
 
-div_table = {
+spinner_clock_div_table = {
     1/1,  -- placeholder
     16/1, -- 16.000,  0.25 - 0.50
     8/1,  --  8.000,  0.50 - 0.75
@@ -105,7 +105,7 @@ function update_time_synced(p, dir)
     output[spinner_out].direction = dir
 
     local idx = math.ceil(p * 20)
-    div = div_table[idx]
+    div = spinner_clock_div_table[idx]
     if div then
         output[spinner_out].spinner_clock_div = div
     end

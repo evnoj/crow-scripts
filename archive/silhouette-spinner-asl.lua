@@ -200,7 +200,7 @@ function update_time_free(p, dir)
 end
 -- pr=true
 
-div_table = {
+spinner_clock_div_table = {
     1/1,  -- placeholder
     16/1, -- 16.000,  0.25 - 0.50
     8/1,  --  8.000,  0.50 - 0.75
@@ -225,7 +225,7 @@ div_table = {
 
 function update_time_synced(p, dir)
     local idx = math.ceil(p * 20)
-    local div = div_table[idx] -- 5/19 = 0.26315
+    local div = spinner_clock_div_table[idx] -- 5/19 = 0.26315
     local current_dir = output[spinner_out].dyn.dir
     local syncer_dirty = false
 
