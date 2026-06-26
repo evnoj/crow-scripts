@@ -70,6 +70,9 @@ spinner_clock_div_table = {
     1/16, --  0.062,  4.75 - 5.00
 }
 
+-- PUBLIC VARIABLES
+public{morphagene_octave_offset = 0}:range(-3,3)
+public{morphagene_direction = 1}:range(-1,1)
 
 -- UTILITIES
 -- truncates digits after thousandths place
@@ -378,6 +381,21 @@ txi_poll_handlers = {
         v = clamp(v, -4, 4)
         local note = v * 12
         note = morphagene_quantizer_active(note)
+
+        if note > 0 then
+            note = note + 12 * public.morphagene_octave_offset
+            if note <= 0 then
+                note = note + 12 * (1 + note // -12)
+            end
+        elseif note < 0 then
+            note = note - 12 * public.morphagene_octave_offset
+            if note >= 0 then
+                note = note - 12 * (1 + note // 12)
+            end
+        end
+
+        -- note = note * public.morphagene_direction
+
         if note ~= morphagene_prev_note then
             morphagene_prev_note = note
             output[morphagene_varispeed_out].volts = morphagene_pitch_map[note]
